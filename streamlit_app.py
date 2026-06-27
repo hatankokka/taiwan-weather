@@ -451,7 +451,14 @@ def request_open_meteo(selected: list[dict]) -> list[dict]:
     }
     url = OPEN_METEO_URL + "?" + urllib.parse.urlencode(params)
     try:
-        with urllib.request.urlopen(url, timeout=20) as response:
+        request = urllib.request.Request(
+            url,
+            headers={
+                "Accept": "application/json",
+                "User-Agent": "taiwan-weather/1.0 (+https://github.com/hatankokka/taiwan-weather)",
+            },
+        )
+        with urllib.request.urlopen(request, timeout=20) as response:
             data = json.loads(response.read().decode("utf-8"))
     except (OSError, TimeoutError, urllib.error.URLError, json.JSONDecodeError) as exc:
         raise WeatherFetchError(str(exc)) from exc
