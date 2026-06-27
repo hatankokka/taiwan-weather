@@ -925,12 +925,17 @@ def marker_value(place: dict, weather: dict, mode: str, lang: str) -> str:
 
 
 def build_bulletin(lang: str, region: str, selected_place: dict, selected_weather: dict, all_weather: dict) -> tuple[str, str]:
-    rows = [(selected_place, selected_weather)] if selected_weather.get("current") else []
+    rows = [(place, all_weather.get(place["id"], {})) for place in places_for_region(region)]
+    rows = [(place, weather) for place, weather in rows if weather.get("current")]
+    if not rows and selected_weather.get("current"):
+        rows = [(selected_place, selected_weather)]
     if not rows:
         return ("天気データを取得すると、読み上げ原稿を作成します。", "天気データを取得すると、読み上げ原稿を作成します。")
-    time_text = weather_time_text(selected_weather.get("current", {}).get("time"), lang)
+    time_text = weather_time_text(rows[0][1].get("current", {}).get("time"), lang)
+    subject = bulletin_subject(region, lang)
+    speech_subject = bulletin_subject_speech(region, lang)
     if lang == "zh":
-        lines = [f"本站發布的{time_text}天氣通報。", f"{place_display_name(selected_place, lang)}目前天氣如下。", ""]
+        lines = [f"本站發布的{time_text}天氣通報。", f"{subject}目前天氣如下。", ""]
         speech = list(lines)
         for place, weather in rows:
             line = chinese_bulletin_line(place, weather)
@@ -939,30 +944,53 @@ def build_bulletin(lang: str, region: str, selected_place: dict, selected_weathe
         lines += ["", "以上。"]
         speech += ["", "以上。"]
     elif lang == "en":
-        lines = [f"Weather bulletin issued by this site at {time_text}.", f"Current weather for {place_display_name(selected_place, lang)}:", ""]
-        speech = [f"Weather bulletin issued by this site at {time_text}.", f"The current weather for {place_display_name(selected_place, lang)} is as follows.", ""]
+        lines = [f"Weather bulletin issued by this site at {time_text}.", f"Current weather for {subject}:", ""]
+        speech = [f"Weather bulletin issued by this site at {time_text}.", f"The current weather for {speech_subject} is as follows.", ""]
         for place, weather in rows:
             lines.append(english_bulletin_line(place, weather, False))
             speech.append(english_bulletin_line(place, weather, True))
         lines += ["", "End of bulletin."]
         speech += ["", "End of bulletin."]
     elif lang == "nl":
-        lines = [f"Weerbericht uitgegeven door deze site om {time_text}.", f"Actueel weer voor {place_display_name(selected_place, lang)}:", ""]
-        speech = [f"Weerbericht uitgegeven door deze site om {time_text}.", f"Het actuele weer voor {place_display_name(selected_place, lang)} is als volgt.", ""]
+        lines = [f"Weerbericht uitgegeven door deze site om {time_text}.", f"Actueel weer voor {subject}:", ""]
+        speech = [f"Weerbericht uitgegeven door deze site om {time_text}.", f"Het actuele weer voor {speech_subject} is als volgt.", ""]
         for place, weather in rows:
             lines.append(dutch_bulletin_line(place, weather, False))
             speech.append(dutch_bulletin_line(place, weather, True))
         lines += ["", "Einde van het bericht."]
         speech += ["", "Einde van het bericht."]
     else:
-        lines = [f"本サイト発表の{time_text}の気象通報です。", f"{selected_place['historical']}（{selected_place['reading']}）のけふの天気は、", ""]
-        speech = [f"ほんさいとはっぴょうの、{weather_time_speech(selected_weather.get('current', {}).get('time'))}の、きしょうつうほうです。", f"{selected_place['reading']}の、げんざいのてんきは、", ""]
+        lines = [f"本サイト発表の{time_text}の気象通報です。", f"{subject}のけふの各地の天気は、", ""]
+        speech = [f"ほんさいとはっぴょうの、{weather_time_speech(rows[0][1].get('current', {}).get('time'))}の、きしょうつうほうです。", f"{speech_subject}の、けふのかくちのてんきは、", ""]
         for place, weather in rows:
             lines.append(japanese_bulletin_line(place, weather, False))
             speech.append(japanese_bulletin_line(place, weather, True))
         lines += ["", "以上です。"]
         speech += ["", "いじょうです。"]
     return ("\n".join(lines), "\n".join(speech))
+
+
+def bulletin_subject(region: str, lang: str) -> str:
+    if region == "all":
+        return {"ja": "台湾・澎湖", "zh": "臺灣、澎湖", "en": "Formosa and Hoko", "nl": "Formosa en Hoko"}[lang]
+    return region_display_name(region, lang)
+
+
+def bulletin_subject_speech(region: str, lang: str) -> str:
+    if lang != "ja":
+        return bulletin_subject(region, lang)
+    readings = {
+        "all": "たいわん、ほうこ",
+        "台北州": "たいほくしゅう",
+        "新竹州": "しんちくしゅう",
+        "台中州": "たいちゅうしゅう",
+        "台南州": "たいなんしゅう",
+        "高雄州": "たかおしゅう",
+        "花蓮港庁": "かれんこうちょう",
+        "台東庁": "たいとうちょう",
+        "澎湖庁": "ほうこちょう",
+    }
+    return readings.get(region, region)
 
 
 def japanese_bulletin_line(place: dict, weather: dict, speech: bool) -> str:
