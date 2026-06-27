@@ -6,6 +6,7 @@ import json
 import math
 import tempfile
 import unicodedata
+import urllib.error
 import urllib.parse
 import urllib.request
 from datetime import datetime
@@ -421,8 +422,11 @@ def fetch_weather(place_ids: tuple[str, ...]) -> dict:
         "forecast_days": "7",
     }
     url = OPEN_METEO_URL + "?" + urllib.parse.urlencode(params)
-    with urllib.request.urlopen(url, timeout=20) as response:
-        data = json.loads(response.read().decode("utf-8"))
+    try:
+        with urllib.request.urlopen(url, timeout=20) as response:
+            data = json.loads(response.read().decode("utf-8"))
+    except (OSError, TimeoutError, urllib.error.URLError, urllib.error.HTTPError, json.JSONDecodeError):
+        return {}
     rows = data if isinstance(data, list) else [data]
     return {place["id"]: row for place, row in zip(selected, rows)}
 
@@ -431,6 +435,16 @@ def places_for_region(region: str) -> list[dict]:
     if region == "all":
         return [place for place in PLACES if place["id"] in OVERVIEW_PLACE_IDS]
     return [place for place in PLACES if place["region"] == region]
+
+
+def default_place_id_for_region(region: str) -> str:
+    for place in PLACES:
+        if place["region"] == region and place.get("main"):
+            return place["id"]
+    for place in PLACES:
+        if place["region"] == region:
+            return place["id"]
+    return ""
 
 
 def place_picker(ui: dict, lang: str, places: list[dict], selected_place_id: str = "") -> dict:
@@ -492,7 +506,7 @@ def render_map(region: str, mode: str, lang: str, weather: dict) -> str:
         opacity = "0.82" if visible else "0.18"
         path = f'<path class="region-shape" d="{feature_path(feature, project)}" fill="{color}" fill-opacity="{opacity}" stroke="#eadfca" stroke-width="1"><title>{html.escape(feature["properties"]["name"])} / {html.escape(region_display_name(historical_region, lang))}</title></path>'
         if region == "all":
-            href = html.escape(map_href(lang, historical_region, mode))
+            href = html.escape(map_href(lang, historical_region, mode, default_place_id_for_region(historical_region)))
             path = f'<a class="map-link" href="{href}">{path}</a>'
         paths.append(path)
 
@@ -508,7 +522,7 @@ def render_map(region: str, mode: str, lang: str, weather: dict) -> str:
             font_size = map_region_font_size(label)
             label_width = map_text_units(label) * font_size * 0.55
             blocked_boxes.append((x - label_width / 2, y - font_size, x + label_width / 2, y + 5))
-            href = html.escape(map_href(lang, item["id"], mode))
+            href = html.escape(map_href(lang, item["id"], mode, default_place_id_for_region(item["id"])))
             region_labels.append(f'<a class="map-link" href="{href}"><text class="region-label" x="{x:.1f}" y="{y:.1f}" text-anchor="middle" font-size="{font_size}" font-weight="900" fill="#5d4a39" stroke="#fff4df" stroke-width="2.5" paint-order="stroke">{html.escape(label)}</text></a>')
 
     labels = []
