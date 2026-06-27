@@ -11,6 +11,7 @@ from datetime import datetime
 from pathlib import Path
 
 import streamlit as st
+import streamlit.components.v1 as components
 
 
 APP_DIR = Path(__file__).parent
@@ -228,7 +229,7 @@ def main() -> None:
 
     left, right = st.columns([1.45, 1], gap="large")
     with left:
-        st.html(render_map(region, mode or "weather", lang, weather))
+        components.html(render_map(region, mode or "weather", lang, weather), height=690, scrolling=False)
 
     with right:
         render_place_detail(selected_place, selected_weather, lang, ui)
@@ -260,7 +261,23 @@ def inject_css() -> None:
           background-size: 42px 24px, 42px 24px, auto;
         }
         h1 { color: #3e2417; letter-spacing: 0; font-size: clamp(1.55rem, 3vw, 2.25rem); }
+        h1, h2, h3,
+        [data-testid="stMarkdownContainer"],
+        [data-testid="stMarkdownContainer"] p,
+        [data-testid="stCaptionContainer"],
+        [data-testid="stMetricLabel"],
+        [data-testid="stMetricValue"],
+        [data-testid="stWidgetLabel"] {
+          color: #2f241c !important;
+        }
         [data-testid="stSidebar"] { background: #f2ead8; }
+        [data-testid="stSidebar"] * {
+          color: #3c281b;
+        }
+        [data-baseweb="select"] *,
+        [data-testid="stTextArea"] textarea {
+          color: inherit;
+        }
         .metric-card {
           border: 1px solid rgba(84,55,36,.22);
           background: rgba(255,250,238,.86);
