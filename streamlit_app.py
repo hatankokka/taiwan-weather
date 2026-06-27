@@ -255,6 +255,8 @@ def main() -> None:
     if selected_place_id and selected_place_id not in {place["id"] for place in visible_places}:
         selected_place_id = ""
     weather = fetch_weather(tuple(place["id"] for place in visible_places))
+    if st.query_params.get("debug_weather") == "1" and st.session_state.get("_weather_fetch_error"):
+        st.code(st.session_state["_weather_fetch_error"], language="text")
     selected_place = place_picker(ui, lang, visible_places, selected_place_id)
     sync_query_params(lang, region, current_mode, selected_place["id"])
     selected_weather = weather.get(selected_place["id"], {})
@@ -411,8 +413,11 @@ def load_geojson() -> dict:
 
 def fetch_weather(place_ids: tuple[str, ...]) -> dict:
     try:
-        return _fetch_weather_cached(place_ids)
-    except WeatherFetchError:
+        weather = _fetch_weather_cached(place_ids)
+        st.session_state.pop("_weather_fetch_error", None)
+        return weather
+    except WeatherFetchError as exc:
+        st.session_state["_weather_fetch_error"] = str(exc)
         return {}
 
 
