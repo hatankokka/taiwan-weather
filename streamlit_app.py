@@ -112,16 +112,7 @@ PLACES = [
     {"id": "shichibi", "historical": "七美", "reading": "しちび", "current": "七美", "region": "澎湖庁", "lat": 23.2085, "lon": 119.4295, "main": True},
 ]
 
-OVERVIEW_PLACE_IDS = {
-    "taihoku", "kiirun", "giran",
-    "shinchiku", "toen", "byoritsu",
-    "taichu", "shoka", "nanto", "niitakayama", "tsugitakayama",
-    "kagi", "tainan",
-    "takao", "okayama", "heito", "koshun",
-    "karenko", "taroko", "tamazato",
-    "taito", "shinko", "kashoto", "kotosho",
-    "mako", "shichibi",
-}
+OVERVIEW_PLACE_IDS = {"taihoku", "shinchiku", "taichu", "niitakayama", "tainan", "takao", "karenko", "taito", "mako"}
 
 ROMAJI_PLACE_NAMES = {
     "taihoku": "Taihoku", "kiirun": "Kiirun", "tansui": "Tansui", "giran": "Giran", "rato": "Rato", "suo": "Suo", "nanao": "Nanao",
@@ -515,8 +506,8 @@ def render_map(region: str, mode: str, lang: str, weather: dict) -> str:
             x, y = project(center[0], center[1])
             label = region_display_name(item["id"], lang)
             font_size = map_region_font_size(label)
-            label_width = map_text_units(label) * font_size * 0.72 + 16
-            blocked_boxes.append((x - label_width / 2, y - font_size * 1.15, x + label_width / 2, y + font_size * 0.35))
+            label_width = map_text_units(label) * font_size * 0.55
+            blocked_boxes.append((x - label_width / 2, y - font_size, x + label_width / 2, y + 5))
             href = html.escape(map_href(lang, item["id"], mode))
             region_labels.append(f'<a class="map-link" href="{href}"><text class="region-label" x="{x:.1f}" y="{y:.1f}" text-anchor="middle" font-size="{font_size}" font-weight="900" fill="#5d4a39" stroke="#fff4df" stroke-width="2.5" paint-order="stroke">{html.escape(label)}</text></a>')
 
@@ -540,7 +531,6 @@ def render_map(region: str, mode: str, lang: str, weather: dict) -> str:
             f"""
             <a class="map-link marker-link" href="{href}">
             <g>
-              <line class="place-label-line" x1="{x:.1f}" y1="{y:.1f}" x2="{label_x + width / 2:.1f}" y2="{label_y + height / 2:.1f}" stroke="#6b5a49" stroke-width="1" opacity=".36" />
               <circle cx="{x:.1f}" cy="{y:.1f}" r="4.5" fill="#5a5748" opacity=".75" />
               <rect class="place-label-bg" x="{label_x:.1f}" y="{label_y:.1f}" width="{width:.1f}" height="{height}" rx="7" fill="#fffdf4" opacity=".96" />
               <text x="{label_x + 8:.1f}" y="{text_label_y:.1f}" font-size="{label_size}" font-weight="700" fill="#2f2924">{html.escape(label)}</text>
@@ -555,16 +545,14 @@ def render_map(region: str, mode: str, lang: str, weather: dict) -> str:
 
     return f"""
     <div id="weather-map-root" style="background:#eee7d5;border:1px solid #d4c4aa;border-radius:8px;overflow:hidden;position:relative;">
-      <div class="map-header" style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:7px 10px;background:#f2ead8;border-bottom:1px solid #d4c4aa;font-weight:800;color:#3c281b;">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;padding:9px 12px;background:#f2ead8;border-bottom:1px solid #d4c4aa;font-weight:800;color:#3c281b;">
         <span>{html.escape(title)}</span>
-        <span class="map-header-tools">
-          <span class="map-source">g0v/twgeojson CC0</span>
-          <span class="map-controls" aria-label="map controls">
-            <button id="zoom-in" type="button" aria-label="zoom in">+</button>
-            <button id="zoom-out" type="button" aria-label="zoom out">-</button>
-            <button id="zoom-reset" type="button" aria-label="reset">{html.escape(reset_label)}</button>
-          </span>
-        </span>
+        <span style="font-weight:500;color:#7f6b58;">g0v/twgeojson CC0</span>
+      </div>
+      <div class="map-controls" aria-label="map controls">
+        <button id="zoom-in" type="button" aria-label="zoom in">+</button>
+        <button id="zoom-out" type="button" aria-label="zoom out">-</button>
+        <button id="zoom-reset" type="button" aria-label="reset">{html.escape(reset_label)}</button>
       </div>
       <svg id="weather-map-svg" viewBox="0 0 900 620" preserveAspectRatio="xMidYMid meet" style="display:block;width:100%;height:620px;background:#e3e1d1;touch-action:none;cursor:grab;">
         <defs>
@@ -579,20 +567,17 @@ def render_map(region: str, mode: str, lang: str, weather: dict) -> str:
       </svg>
       <style>
         .map-controls {{
+          position:absolute;
+          right:12px;
+          top:52px;
           display:flex;
           gap:6px;
-          padding:0;
+          padding:7px;
           background:rgba(255,253,244,.92);
-        }}
-        .map-header-tools {{
-          display:flex;
-          align-items:center;
-          gap:10px;
-          flex-shrink:0;
-        }}
-        .map-source {{
-          font-weight:500;
-          color:#7f6b58;
+          border:1px solid rgba(84,55,36,.16);
+          border-radius:8px;
+          box-shadow:0 6px 18px rgba(45,28,18,.14);
+          z-index:3;
         }}
         .map-controls button {{
           min-width:32px;
@@ -610,23 +595,6 @@ def render_map(region: str, mode: str, lang: str, weather: dict) -> str:
         .map-link:hover .region-shape {{ stroke:#473420; stroke-width:2; }}
         .marker-link:hover .place-label-bg {{ stroke:#473420; stroke-width:1.5; }}
         #weather-map-svg.dragging {{ cursor:grabbing; }}
-        @media (max-width: 520px) {{
-          .map-header {{
-            align-items:flex-start !important;
-            gap:6px !important;
-          }}
-          .map-header-tools {{
-            gap:6px;
-          }}
-          .map-source {{
-            display:none;
-          }}
-          .map-controls button {{
-            min-width:29px;
-            height:28px;
-            font-size:13px;
-          }}
-        }}
       </style>
     </div>
     """
@@ -676,31 +644,12 @@ def choose_map_label_box(x: float, y: float, width: float, height: float, placed
         (x + 18, y - height - 24),
         (x - width - 18, y + 18),
     ]
-    for radius in (28, 46, 68, 94, 124, 158):
-        for dx, dy in (
-            (radius, 0), (-radius, 0), (0, -radius), (0, radius),
-            (radius, -radius), (-radius, -radius), (radius, radius), (-radius, radius),
-            (radius * 1.35, -radius * 0.45), (-radius * 1.35, -radius * 0.45),
-            (radius * 1.35, radius * 0.45), (-radius * 1.35, radius * 0.45),
-        ):
-            left = x + dx
-            top = y + dy
-            if dx < 0:
-                left -= width
-            elif abs(dx) < 1:
-                left -= width / 2
-            if dy < 0:
-                top -= height
-            elif abs(dy) < 1:
-                top -= height / 2
-            candidates.append((left, top))
     best = None
     for index, (left, top) in enumerate(candidates):
         left = clamp(left, 8, 900 - width - 8)
         top = clamp(top, 8, 620 - height - 8)
         box = (left, top, left + width, top + height)
-        overlap_penalty = sum(overlap_area(box, existing, 8) for existing in placed_boxes) * 12
-        overlap_penalty += sum(1 for existing in placed_boxes if boxes_overlap(box, existing, 8)) * 10000
+        overlap_penalty = sum(1 for existing in placed_boxes if boxes_overlap(box, existing, 5)) * 1000
         distance_penalty = math.hypot((left + width / 2) - x, (top + height / 2) - y)
         score = overlap_penalty + distance_penalty + index * 3
         if best is None or score < best[0]:
@@ -714,16 +663,6 @@ def choose_map_label_box(x: float, y: float, width: float, height: float, placed
 
 def boxes_overlap(a: tuple[float, float, float, float], b: tuple[float, float, float, float], gap: float = 0) -> bool:
     return not (a[2] + gap < b[0] or b[2] + gap < a[0] or a[3] + gap < b[1] or b[3] + gap < a[1])
-
-
-def overlap_area(a: tuple[float, float, float, float], b: tuple[float, float, float, float], gap: float = 0) -> float:
-    left = max(a[0] - gap, b[0] - gap)
-    top = max(a[1] - gap, b[1] - gap)
-    right = min(a[2] + gap, b[2] + gap)
-    bottom = min(a[3] + gap, b[3] + gap)
-    if right <= left or bottom <= top:
-        return 0.0
-    return (right - left) * (bottom - top)
 
 
 def clamp(value: float, minimum: float, maximum: float) -> float:
