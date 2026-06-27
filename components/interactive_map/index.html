@@ -1,0 +1,198 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    html,
+    body {
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+      background: transparent;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+  </style>
+</head>
+<body>
+  <div id="mount"></div>
+  <script>
+    const Streamlit = {
+      send(type, data) {
+        window.parent.postMessage({ isStreamlitMessage: true, type, ...data }, "*");
+      },
+      setComponentReady() {
+        this.send("streamlit:componentReady", { apiVersion: 1 });
+      },
+      setFrameHeight(height) {
+        this.send("streamlit:setFrameHeight", { height });
+      },
+      setComponentValue(value) {
+        this.send("streamlit:setComponentValue", { value });
+      },
+    };
+
+    function selectionFromHref(href) {
+      const url = new URL(href, window.location.href);
+      return {
+        lang: url.searchParams.get("lang") || "",
+        region: url.searchParams.get("region") || "",
+        mode: url.searchParams.get("mode") || "",
+        place: url.searchParams.get("place") || "",
+      };
+    }
+
+    function attachMapHandlers(height) {
+      const root = document.getElementById("weather-map-root");
+      const svg = document.getElementById("weather-map-svg");
+      if (!root || !svg) {
+        Streamlit.setFrameHeight(height || document.documentElement.scrollHeight || 690);
+        return;
+      }
+
+      const base = { x: 0, y: 0, w: 900, h: 620 };
+      let box = { ...base };
+      let pointer = null;
+      let suppressClick = false;
+
+      function normalize() {
+        box.w = Math.max(base.w * 0.22, Math.min(base.w * 1.35, box.w));
+        box.h = Math.max(base.h * 0.22, Math.min(base.h * 1.35, box.h));
+        const slackX = base.w * 0.18;
+        const slackY = base.h * 0.18;
+        const minX = base.x - slackX;
+        const maxX = base.x + base.w - box.w + slackX;
+        const minY = base.y - slackY;
+        const maxY = base.y + base.h - box.h + slackY;
+        box.x = Math.min(Math.max(box.x, Math.min(minX, maxX)), Math.max(minX, maxX));
+        box.y = Math.min(Math.max(box.y, Math.min(minY, maxY)), Math.max(minY, maxY));
+      }
+
+      function apply() {
+        normalize();
+        svg.setAttribute("viewBox", `${box.x} ${box.y} ${box.w} ${box.h}`);
+      }
+
+      function zoom(factor, clientX, clientY) {
+        const rect = svg.getBoundingClientRect();
+        const px = (clientX - rect.left) / rect.width;
+        const py = (clientY - rect.top) / rect.height;
+        const sx = box.x + box.w * px;
+        const sy = box.y + box.h * py;
+        box.w *= factor;
+        box.h *= factor;
+        box.x = sx - box.w * px;
+        box.y = sy - box.h * py;
+        apply();
+      }
+
+      svg.addEventListener("wheel", (event) => {
+        event.preventDefault();
+        zoom(event.deltaY > 0 ? 1.14 : 0.86, event.clientX, event.clientY);
+      }, { passive: false });
+
+      svg.addEventListener("pointerdown", (event) => {
+        const link = event.target.closest ? event.target.closest("a.map-link") : null;
+        pointer = {
+          id: event.pointerId,
+          x: event.clientX,
+          y: event.clientY,
+          box: { ...box },
+          href: link ? link.getAttribute("href") : "",
+        };
+        suppressClick = false;
+        svg.classList.add("dragging");
+        svg.setPointerCapture(event.pointerId);
+      });
+
+      svg.addEventListener("pointermove", (event) => {
+        if (!pointer) return;
+        const rect = svg.getBoundingClientRect();
+        const moveX = event.clientX - pointer.x;
+        const moveY = event.clientY - pointer.y;
+        if (Math.abs(moveX) + Math.abs(moveY) > 4) suppressClick = true;
+        box.x = pointer.box.x - (moveX * pointer.box.w / rect.width);
+        box.y = pointer.box.y - (moveY * pointer.box.h / rect.height);
+        apply();
+      });
+
+      function endPointer(event) {
+        if (!pointer) return;
+        const href = pointer.href;
+        const shouldSelect = href && !suppressClick;
+        try {
+          svg.releasePointerCapture(event.pointerId);
+        } catch (_error) {
+          // The pointer may already be released when the browser cancels a gesture.
+        }
+        pointer = null;
+        svg.classList.remove("dragging");
+        if (shouldSelect) {
+          event.preventDefault();
+          Streamlit.setComponentValue(selectionFromHref(href));
+        }
+        window.setTimeout(() => { suppressClick = false; }, 0);
+      }
+
+      svg.addEventListener("pointerup", endPointer);
+      svg.addEventListener("pointercancel", endPointer);
+
+      root.addEventListener("click", (event) => {
+        if (!suppressClick) return;
+        event.preventDefault();
+        event.stopPropagation();
+      }, true);
+
+      root.querySelectorAll("a.map-link").forEach((link) => {
+        link.addEventListener("click", (event) => {
+          if (suppressClick) return;
+          const href = link.getAttribute("href");
+          if (!href) return;
+          event.preventDefault();
+          Streamlit.setComponentValue(selectionFromHref(href));
+        });
+      });
+
+      function centerPoint() {
+        const rect = svg.getBoundingClientRect();
+        return [rect.left + rect.width / 2, rect.top + rect.height / 2];
+      }
+
+      const zoomIn = document.getElementById("zoom-in");
+      const zoomOut = document.getElementById("zoom-out");
+      const zoomReset = document.getElementById("zoom-reset");
+
+      if (zoomIn) {
+        zoomIn.addEventListener("click", () => {
+          const [x, y] = centerPoint();
+          zoom(0.82, x, y);
+        });
+      }
+      if (zoomOut) {
+        zoomOut.addEventListener("click", () => {
+          const [x, y] = centerPoint();
+          zoom(1.18, x, y);
+        });
+      }
+      if (zoomReset) {
+        zoomReset.addEventListener("click", () => {
+          box = { ...base };
+          apply();
+        });
+      }
+
+      Streamlit.setFrameHeight(height || document.documentElement.scrollHeight || 690);
+    }
+
+    window.addEventListener("message", (event) => {
+      if (!event.data || event.data.type !== "streamlit:render") return;
+      const args = event.data.args || {};
+      const mount = document.getElementById("mount");
+      mount.innerHTML = args.html || "";
+      attachMapHandlers(args.height || 690);
+    });
+
+    Streamlit.setComponentReady();
+  </script>
+</body>
+</html>

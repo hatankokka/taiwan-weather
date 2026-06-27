@@ -16,7 +16,9 @@ import streamlit.components.v1 as components
 
 APP_DIR = Path(__file__).parent
 GEOJSON_PATH = APP_DIR / "data" / "twCounty1982.json"
+COMPONENT_DIR = APP_DIR / "components" / "interactive_map"
 OPEN_METEO_URL = "https://api.open-meteo.com/v1/forecast"
+interactive_map_component = components.declare_component("interactive_map", path=str(COMPONENT_DIR))
 
 REGIONS = [
     {"id": "all", "label": "全域", "color": "#d6c38a"},
@@ -210,18 +212,44 @@ UI = {
 def main() -> None:
     st.set_page_config(page_title="台湾・澎湖 歴史地名天気", page_icon="☂", layout="wide")
     inject_css()
+    query_defaults = query_state()
 
     with st.sidebar:
-        lang = st.radio("Language", list(LANGUAGES.keys()), format_func=lambda key: LANGUAGES[key], horizontal=True)
+        language_ids = list(LANGUAGES.keys())
+        lang = st.radio(
+            "Language",
+            language_ids,
+            index=language_ids.index(query_defaults["lang"]),
+            format_func=lambda key: LANGUAGES[key],
+            horizontal=True,
+        )
         ui = UI[lang]
-        region = st.selectbox(ui["region"], [r["id"] for r in REGIONS], format_func=lambda rid: region_display_name(rid, lang))
-        mode = st.radio(ui["map_mode"], ["weather", "temperature", "precipitation"], format_func=lambda key: ui[key], horizontal=True)
+        region_ids = [r["id"] for r in REGIONS]
+        region = st.selectbox(
+            ui["region"],
+            region_ids,
+            index=region_ids.index(query_defaults["region"]),
+            format_func=lambda rid: region_display_name(rid, lang),
+        )
+        mode_ids = ["weather", "temperature", "precipitation"]
+        mode = st.radio(
+            ui["map_mode"],
+            mode_ids,
+            index=mode_ids.index(query_defaults["mode"]),
+            format_func=lambda key: ui[key],
+            horizontal=True,
+        )
         voice_options = SPEECH_VOICES[lang]
         voice = st.selectbox(ui["voice"], [v[0] for v in voice_options], format_func=lambda key: dict(voice_options)[key])
 
+    current_mode = mode or "weather"
     visible_places = places_for_region(region)
+    selected_place_id = query_defaults.get("place")
+    if selected_place_id and selected_place_id not in {place["id"] for place in visible_places}:
+        selected_place_id = ""
     weather = fetch_weather(tuple(place["id"] for place in visible_places))
-    selected_place = place_picker(ui, lang, visible_places)
+    selected_place = place_picker(ui, lang, visible_places, selected_place_id)
+    sync_query_params(lang, region, current_mode, selected_place["id"])
     selected_weather = weather.get(selected_place["id"], {})
 
     st.markdown(f"<h1>{html.escape(ui['title'])}</h1>", unsafe_allow_html=True)
@@ -229,7 +257,22 @@ def main() -> None:
 
     left, right = st.columns([1.45, 1], gap="large")
     with left:
-        components.html(render_map(region, mode or "weather", lang, weather), height=690, scrolling=False)
+        map_event = interactive_map_component(
+            html=render_map(region, current_mode, lang, weather),
+            height=690,
+            default=None,
+            key=f"interactive-map-{lang}-{region}-{current_mode}",
+        )
+        if isinstance(map_event, dict):
+            next_lang = map_event.get("lang") if map_event.get("lang") in LANGUAGES else lang
+            region_ids = {item["id"] for item in REGIONS}
+            next_region = map_event.get("region") if map_event.get("region") in region_ids else region
+            mode_ids = {"weather", "temperature", "precipitation"}
+            next_mode = map_event.get("mode") if map_event.get("mode") in mode_ids else current_mode
+            place_ids = {place["id"] for place in PLACES}
+            next_place = map_event.get("place") if map_event.get("place") in place_ids else ""
+            if sync_query_params(next_lang, next_region, next_mode, next_place):
+                st.rerun()
 
     with right:
         render_place_detail(selected_place, selected_weather, lang, ui)
@@ -247,6 +290,33 @@ def main() -> None:
 
     with st.expander("Open Source / Open Data"):
         st.write("地図形状はg0v/twgeojson由来のGeoJSON、気象データはOpen-Meteo Forecast APIを使用しています。")
+
+
+def query_state() -> dict:
+    params = st.query_params
+    language_ids = set(LANGUAGES.keys())
+    region_ids = {region["id"] for region in REGIONS}
+    mode_ids = {"weather", "temperature", "precipitation"}
+    place_ids = {place["id"] for place in PLACES}
+    lang = params.get("lang", "ja")
+    region = params.get("region", "all")
+    mode = params.get("mode", "weather")
+    place = params.get("place", "")
+    return {
+        "lang": lang if lang in language_ids else "ja",
+        "region": region if region in region_ids else "all",
+        "mode": mode if mode in mode_ids else "weather",
+        "place": place if place in place_ids else "",
+    }
+
+
+def sync_query_params(lang: str, region: str, mode: str, place_id: str) -> bool:
+    desired = {"lang": lang, "region": region, "mode": mode, "place": place_id}
+    current = {key: st.query_params.get(key, "") for key in desired}
+    if current != desired:
+        st.query_params.update(desired)
+        return True
+    return False
 
 
 def inject_css() -> None:
@@ -334,9 +404,11 @@ def places_for_region(region: str) -> list[dict]:
     return [place for place in PLACES if place["region"] == region]
 
 
-def place_picker(ui: dict, lang: str, places: list[dict]) -> dict:
+def place_picker(ui: dict, lang: str, places: list[dict], selected_place_id: str = "") -> dict:
     options = places or PLACES
-    return st.sidebar.selectbox(ui["place"], options, format_func=lambda place: place_display_name(place, lang))
+    ids = [place["id"] for place in options]
+    index = ids.index(selected_place_id) if selected_place_id in ids else 0
+    return st.sidebar.selectbox(ui["place"], options, index=index, format_func=lambda place: place_display_name(place, lang))
 
 
 def render_place_detail(place: dict, weather: dict, lang: str, ui: dict) -> None:
@@ -389,22 +461,34 @@ def render_map(region: str, mode: str, lang: str, weather: dict) -> str:
         visible = region == "all" or historical_region == region
         color = region_colors.get(historical_region, "#d6c38a")
         opacity = "0.82" if visible else "0.18"
-        paths.append(f'<path d="{feature_path(feature, project)}" fill="{color}" fill-opacity="{opacity}" stroke="#eadfca" stroke-width="1"><title>{html.escape(feature["properties"]["name"])} / {html.escape(region_display_name(historical_region, lang))}</title></path>')
+        path = f'<path class="region-shape" d="{feature_path(feature, project)}" fill="{color}" fill-opacity="{opacity}" stroke="#eadfca" stroke-width="1"><title>{html.escape(feature["properties"]["name"])} / {html.escape(region_display_name(historical_region, lang))}</title></path>'
+        if region == "all":
+            href = html.escape(map_href(lang, historical_region, mode))
+            path = f'<a class="map-link" href="{href}">{path}</a>'
+        paths.append(path)
 
     labels = []
     for place in shown_places:
         x, y = project(place["lon"], place["lat"])
         value = marker_value(place, weather.get(place["id"], {}), mode, lang)
         label = place_display_name(place, lang)
-        width = max(56, min(116, 9 * max(len(label), len(value)) + 18))
+        is_weather_mode = mode == "weather"
+        width = max(70 if is_weather_mode else 64, min(132, 9 * max(len(label), len(value)) + 22))
+        height = 46 if is_weather_mode else 40
+        label_y = y - 17 if is_weather_mode else y - 16
+        value_y = y + 5 if is_weather_mode else y - 2
+        value_size = 22 if is_weather_mode else 13
+        href = html.escape(map_href(lang, region, mode, place["id"]))
         labels.append(
             f"""
+            <a class="map-link marker-link" href="{href}">
             <g>
               <circle cx="{x:.1f}" cy="{y:.1f}" r="4.5" fill="#5a5748" opacity=".75" />
-              <rect x="{x + 7:.1f}" y="{y - 31:.1f}" width="{width}" height="36" rx="7" fill="#fffdf4" opacity=".95" />
-              <text x="{x + 12:.1f}" y="{y - 16:.1f}" font-size="13" font-weight="700" fill="#2f2924">{html.escape(label)}</text>
-              <text x="{x + 12:.1f}" y="{y - 3:.1f}" font-size="13" font-weight="800" fill="#0f7585">{html.escape(value)}</text>
+              <rect x="{x + 7:.1f}" y="{y - 34:.1f}" width="{width}" height="{height}" rx="7" fill="#fffdf4" opacity=".95" />
+              <text x="{x + 12:.1f}" y="{label_y:.1f}" font-size="13" font-weight="700" fill="#2f2924">{html.escape(label)}</text>
+              <text x="{x + 12:.1f}" y="{value_y:.1f}" font-size="{value_size}" font-weight="800" fill="#0f7585">{html.escape(value)}</text>
             </g>
+            </a>
             """
         )
 
@@ -415,15 +499,24 @@ def render_map(region: str, mode: str, lang: str, weather: dict) -> str:
                 continue
             center = bounds_center(bounds_for_features([f for f in features if f["historical_region"] == item["id"]]))
             x, y = project(center[0], center[1])
-            region_labels.append(f'<text x="{x:.1f}" y="{y:.1f}" text-anchor="middle" font-size="24" font-weight="900" fill="#5d4a39" stroke="#fff4df" stroke-width="3" paint-order="stroke">{html.escape(region_display_name(item["id"], lang))}</text>')
+            href = html.escape(map_href(lang, item["id"], mode))
+            region_labels.append(f'<a class="map-link" href="{href}"><text x="{x:.1f}" y="{y:.1f}" text-anchor="middle" font-size="24" font-weight="900" fill="#5d4a39" stroke="#fff4df" stroke-width="3" paint-order="stroke">{html.escape(region_display_name(item["id"], lang))}</text></a>')
+
+    reset_label = {"ja": "初期", "zh": "重置", "en": "Reset", "nl": "Begin"}.get(lang, "Reset")
+    title = "けふの台湾" if lang == "ja" else region_display_name(region, lang)
 
     return f"""
-    <div style="background:#eee7d5;border:1px solid #d4c4aa;border-radius:8px;overflow:hidden;">
-      <div style="display:flex;justify-content:space-between;padding:9px 12px;background:#f2ead8;border-bottom:1px solid #d4c4aa;font-weight:800;color:#3c281b;">
-        <span>{html.escape("けふの台湾" if lang == "ja" else region_display_name(region, lang))}</span>
+    <div id="weather-map-root" style="background:#eee7d5;border:1px solid #d4c4aa;border-radius:8px;overflow:hidden;position:relative;">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;padding:9px 12px;background:#f2ead8;border-bottom:1px solid #d4c4aa;font-weight:800;color:#3c281b;">
+        <span>{html.escape(title)}</span>
         <span style="font-weight:500;color:#7f6b58;">g0v/twgeojson CC0</span>
       </div>
-      <svg viewBox="0 0 900 620" preserveAspectRatio="xMidYMid meet" style="display:block;width:100%;height:620px;background:#e3e1d1;">
+      <div class="map-controls" aria-label="map controls">
+        <button id="zoom-in" type="button" aria-label="zoom in">+</button>
+        <button id="zoom-out" type="button" aria-label="zoom out">-</button>
+        <button id="zoom-reset" type="button" aria-label="reset">{html.escape(reset_label)}</button>
+      </div>
+      <svg id="weather-map-svg" viewBox="0 0 900 620" preserveAspectRatio="xMidYMid meet" style="display:block;width:100%;height:620px;background:#e3e1d1;touch-action:none;cursor:grab;">
         <defs>
           <pattern id="grid" width="32" height="32" patternUnits="userSpaceOnUse">
             <path d="M 32 0 L 0 0 0 32" fill="none" stroke="#cfc9b6" stroke-width="1" opacity=".55"/>
@@ -434,8 +527,45 @@ def render_map(region: str, mode: str, lang: str, weather: dict) -> str:
         {''.join(region_labels)}
         {''.join(labels)}
       </svg>
+      <style>
+        .map-controls {{
+          position:absolute;
+          right:12px;
+          top:52px;
+          display:flex;
+          gap:6px;
+          padding:7px;
+          background:rgba(255,253,244,.92);
+          border:1px solid rgba(84,55,36,.16);
+          border-radius:8px;
+          box-shadow:0 6px 18px rgba(45,28,18,.14);
+          z-index:3;
+        }}
+        .map-controls button {{
+          min-width:32px;
+          height:30px;
+          border:1px solid #d7cbb7;
+          border-radius:6px;
+          background:#fffdf8;
+          color:#2f2924;
+          font:700 14px system-ui, -apple-system, Segoe UI, sans-serif;
+          cursor:pointer;
+        }}
+        .map-controls button:hover {{ background:#f2ead8; }}
+        .map-link, .marker-link {{ cursor:pointer; text-decoration:none; }}
+        .map-link:hover .region-shape {{ stroke:#473420; stroke-width:2; }}
+        .marker-link:hover rect {{ stroke:#473420; stroke-width:1.5; }}
+        #weather-map-svg.dragging {{ cursor:grabbing; }}
+      </style>
     </div>
     """
+
+
+def map_href(lang: str, region: str, mode: str, place_id: str = "") -> str:
+    params = {"lang": lang, "region": region, "mode": mode}
+    if place_id:
+        params["place"] = place_id
+    return "?" + urllib.parse.urlencode(params)
 
 
 def feature_path(feature: dict, project) -> str:
@@ -509,7 +639,7 @@ def marker_value(place: dict, weather: dict, mode: str, lang: str) -> str:
     if mode == "precipitation":
         rain = first(daily.get("precipitation_probability_max"))
         return "--" if rain is None else f"{round(rain)}%"
-    return f"{weather_icon(current.get('weather_code'))} {weather_text(current.get('weather_code'), lang)}"
+    return weather_icon(current.get("weather_code"))
 
 
 def build_bulletin(lang: str, region: str, selected_place: dict, selected_weather: dict, all_weather: dict) -> tuple[str, str]:
