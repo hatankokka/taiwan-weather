@@ -4,27 +4,37 @@ import asyncio
 import html
 import json
 import math
+import ssl
 import tempfile
 import unicodedata
 import urllib.error
 import urllib.parse
 import urllib.request
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import streamlit as st
 import streamlit.components.v1 as components
+
+try:
+    import certifi
+except ImportError:
+    certifi = None
 
 
 APP_DIR = Path(__file__).parent
 GEOJSON_PATH = APP_DIR / "data" / "twCounty1982.json"
 COMPONENT_DIR = APP_DIR / "components" / "interactive_map"
 OPEN_METEO_URL = "https://api.open-meteo.com/v1/forecast"
+MET_NO_URL = "https://api.met.no/weatherapi/locationforecast/2.0/compact"
+SSL_CONTEXT = ssl.create_default_context(cafile=certifi.where()) if certifi else ssl.create_default_context()
 interactive_map_component = components.declare_component("interactive_map", path=str(COMPONENT_DIR))
 
 
 class WeatherFetchError(RuntimeError):
-    pass
+    def __init__(self, message: str, status: int | None = None) -> None:
+        super().__init__(message)
+        self.status = status
 
 
 REGIONS = [
@@ -428,7 +438,9 @@ def _fetch_weather_cached(place_ids: tuple[str, ...]) -> dict:
         return {}
     try:
         rows = request_open_meteo(selected)
-    except WeatherFetchError:
+    except WeatherFetchError as exc:
+        if exc.status == 429:
+            return request_met_no_weather(selected)
         rows_by_place_id = {}
         for place in selected:
             try:
@@ -437,7 +449,7 @@ def _fetch_weather_cached(place_ids: tuple[str, ...]) -> dict:
                 continue
         if rows_by_place_id:
             return rows_by_place_id
-        raise
+        return request_met_no_weather(selected)
     return {place["id"]: row for place, row in zip(selected, rows)}
 
 
@@ -463,8 +475,10 @@ def request_open_meteo(selected: list[dict]) -> list[dict]:
                 "User-Agent": "taiwan-weather/1.0 (+https://github.com/hatankokka/taiwan-weather)",
             },
         )
-        with urllib.request.urlopen(request, timeout=20) as response:
+        with urllib.request.urlopen(request, timeout=20, context=SSL_CONTEXT) as response:
             data = json.loads(response.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        raise WeatherFetchError(str(exc), status=exc.code) from exc
     except (OSError, TimeoutError, urllib.error.URLError, json.JSONDecodeError) as exc:
         raise WeatherFetchError(str(exc)) from exc
     if isinstance(data, dict) and data.get("error"):
@@ -473,6 +487,115 @@ def request_open_meteo(selected: list[dict]) -> list[dict]:
     if not rows or len(rows) < len(selected) or any(not isinstance(row, dict) or "current" not in row for row in rows):
         raise WeatherFetchError("Open-Meteo returned no weather rows")
     return rows
+
+
+def request_met_no_weather(selected: list[dict]) -> dict:
+    rows = {}
+    for place in selected:
+        params = {"lat": f"{place['lat']:.4f}", "lon": f"{place['lon']:.4f}"}
+        url = MET_NO_URL + "?" + urllib.parse.urlencode(params)
+        request = urllib.request.Request(
+            url,
+            headers={
+                "Accept": "application/json",
+                "User-Agent": "taiwan-weather/1.0 (+https://github.com/hatankokka/taiwan-weather)",
+            },
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=20, context=SSL_CONTEXT) as response:
+                data = json.loads(response.read().decode("utf-8"))
+            rows[place["id"]] = met_no_to_weather_row(data)
+        except (OSError, TimeoutError, urllib.error.URLError, json.JSONDecodeError, KeyError, IndexError, TypeError, ValueError):
+            continue
+    if not rows:
+        raise WeatherFetchError("MET Norway fallback returned no weather rows")
+    return rows
+
+
+def met_no_to_weather_row(data: dict) -> dict:
+    timeseries = data["properties"]["timeseries"]
+    current_entry = timeseries[0]
+    current_details = current_entry["data"]["instant"]["details"]
+    daily_groups: dict[str, dict] = {}
+    for entry in timeseries:
+        dt = parse_met_no_time(entry["time"])
+        details = entry["data"]["instant"]["details"]
+        date_key = dt.date().isoformat()
+        group = daily_groups.setdefault(date_key, {"temps": [], "codes": []})
+        temp = details.get("air_temperature")
+        if temp is not None:
+            group["temps"].append(temp)
+        code = met_no_weather_code(entry)
+        if code is not None:
+            group["codes"].append(code)
+    dates = sorted(daily_groups)[:7]
+    daily_codes = [strongest_weather_code(daily_groups[date]["codes"]) for date in dates]
+    daily_min = [min(daily_groups[date]["temps"]) if daily_groups[date]["temps"] else None for date in dates]
+    daily_max = [max(daily_groups[date]["temps"]) if daily_groups[date]["temps"] else None for date in dates]
+    return {
+        "current": {
+            "time": parse_met_no_time(current_entry["time"]).isoformat(timespec="minutes"),
+            "temperature_2m": current_details.get("air_temperature"),
+            "weather_code": met_no_weather_code(current_entry),
+            "pressure_msl": current_details.get("air_pressure_at_sea_level"),
+            "wind_speed_10m": current_details.get("wind_speed"),
+            "wind_direction_10m": current_details.get("wind_from_direction"),
+        },
+        "daily": {
+            "time": dates,
+            "weather_code": daily_codes,
+            "temperature_2m_max": daily_max,
+            "temperature_2m_min": daily_min,
+            "precipitation_probability_max": [None for _ in dates],
+        },
+    }
+
+
+def parse_met_no_time(value: str) -> datetime:
+    dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    return dt.astimezone(timezone(timedelta(hours=8))).replace(tzinfo=None)
+
+
+def met_no_weather_code(entry: dict) -> int | None:
+    data = entry.get("data", {})
+    summary = None
+    for key in ("next_1_hours", "next_6_hours", "next_12_hours"):
+        if key in data:
+            summary = data[key].get("summary", {}).get("symbol_code")
+            if summary:
+                break
+    return met_no_symbol_to_open_meteo_code(summary)
+
+
+def met_no_symbol_to_open_meteo_code(symbol: str | None) -> int | None:
+    if not symbol:
+        return None
+    base = symbol.removesuffix("_day").removesuffix("_night").removesuffix("_polartwilight")
+    if base == "clearsky":
+        return 0
+    if base == "fair":
+        return 1
+    if base == "partlycloudy":
+        return 2
+    if base == "cloudy":
+        return 3
+    if base == "fog":
+        return 45
+    if "thunder" in base:
+        return 95
+    if "snow" in base or "sleet" in base:
+        return 73
+    if "rain" in base:
+        return 63
+    return None
+
+
+def strongest_weather_code(codes: list[int | None]) -> int | None:
+    severity = {95: 9, 73: 8, 63: 7, 61: 6, 51: 5, 45: 4, 3: 3, 2: 2, 1: 1, 0: 0}
+    valid_codes = [code for code in codes if code is not None]
+    if not valid_codes:
+        return None
+    return max(valid_codes, key=lambda code: severity.get(code, 0))
 
 
 def places_for_region(region: str) -> list[dict]:
