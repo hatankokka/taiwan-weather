@@ -22,6 +22,11 @@ COMPONENT_DIR = APP_DIR / "components" / "interactive_map"
 OPEN_METEO_URL = "https://api.open-meteo.com/v1/forecast"
 interactive_map_component = components.declare_component("interactive_map", path=str(COMPONENT_DIR))
 
+
+class WeatherFetchError(RuntimeError):
+    pass
+
+
 REGIONS = [
     {"id": "all", "label": "全域", "color": "#d6c38a"},
     {"id": "台北州", "label": "台北州", "color": "#78a6b8"},
@@ -404,11 +409,34 @@ def load_geojson() -> dict:
     return data
 
 
-@st.cache_data(ttl=900, show_spinner=False)
 def fetch_weather(place_ids: tuple[str, ...]) -> dict:
+    try:
+        return _fetch_weather_cached(place_ids)
+    except WeatherFetchError:
+        return {}
+
+
+@st.cache_data(ttl=900, show_spinner=False)
+def _fetch_weather_cached(place_ids: tuple[str, ...]) -> dict:
     selected = [place_by_id(pid) for pid in place_ids]
     if not selected:
         return {}
+    try:
+        rows = request_open_meteo(selected)
+    except WeatherFetchError:
+        rows_by_place_id = {}
+        for place in selected:
+            try:
+                rows_by_place_id[place["id"]] = request_open_meteo([place])[0]
+            except WeatherFetchError:
+                continue
+        if rows_by_place_id:
+            return rows_by_place_id
+        raise
+    return {place["id"]: row for place, row in zip(selected, rows)}
+
+
+def request_open_meteo(selected: list[dict]) -> list[dict]:
     params = {
         "latitude": ",".join(str(place["lat"]) for place in selected),
         "longitude": ",".join(str(place["lon"]) for place in selected),
@@ -425,10 +453,14 @@ def fetch_weather(place_ids: tuple[str, ...]) -> dict:
     try:
         with urllib.request.urlopen(url, timeout=20) as response:
             data = json.loads(response.read().decode("utf-8"))
-    except (OSError, TimeoutError, urllib.error.URLError, urllib.error.HTTPError, json.JSONDecodeError):
-        return {}
+    except (OSError, TimeoutError, urllib.error.URLError, json.JSONDecodeError) as exc:
+        raise WeatherFetchError(str(exc)) from exc
+    if isinstance(data, dict) and data.get("error"):
+        raise WeatherFetchError(str(data.get("reason", "Open-Meteo returned an error")))
     rows = data if isinstance(data, list) else [data]
-    return {place["id"]: row for place, row in zip(selected, rows)}
+    if not rows or len(rows) < len(selected) or any(not isinstance(row, dict) or "current" not in row for row in rows):
+        raise WeatherFetchError("Open-Meteo returned no weather rows")
+    return rows
 
 
 def places_for_region(region: str) -> list[dict]:
@@ -925,7 +957,7 @@ def weather_text_speech(code) -> str:
 
 
 def weather_icon(code) -> str:
-    return {"clear": "☀", "partly": "⛅", "cloudy": "☁", "fog": "≋", "drizzle": "☂", "rain": "☔", "snow": "❄", "thunder": "⚡", "unknown": "？"}[weather_kind(code)]
+    return {"clear": "☀", "partly": "⛅", "cloudy": "☁", "fog": "≋", "drizzle": "☂", "rain": "☔", "snow": "❄", "thunder": "⚡", "unknown": "–"}[weather_kind(code)]
 
 
 def wind_direction(degrees, lang: str) -> str:
