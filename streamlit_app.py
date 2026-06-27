@@ -260,7 +260,7 @@ def main() -> None:
     with left:
         map_event = interactive_map_component(
             html=render_map(region, current_mode, lang, weather),
-            height=690,
+            min_height=690,
             default=None,
             key=f"interactive-map-{lang}-{region}-{current_mode}",
         )

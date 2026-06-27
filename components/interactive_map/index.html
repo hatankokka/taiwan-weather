@@ -42,11 +42,13 @@
       };
     }
 
-    function attachMapHandlers(height) {
+    let lastHtml = "";
+    let resizeHandler = null;
+
+    function attachMapHandlers(minHeight) {
       const root = document.getElementById("weather-map-root");
       const svg = document.getElementById("weather-map-svg");
       if (!root || !svg) {
-        Streamlit.setFrameHeight(height || document.documentElement.scrollHeight || 690);
         return;
       }
 
@@ -58,9 +60,10 @@
       function resizeMap() {
         const width = root.clientWidth || 900;
         const svgHeight = Math.round(Math.max(260, Math.min(620, width * base.h / base.w)));
+        const headerHeight = root.querySelector(".map-header")?.getBoundingClientRect().height || 42;
         svg.style.height = `${svgHeight}px`;
         window.setTimeout(() => {
-          Streamlit.setFrameHeight(root.getBoundingClientRect().height || height || 690);
+          Streamlit.setFrameHeight(Math.ceil(headerHeight + svgHeight + 2));
         }, 0);
       }
 
@@ -191,15 +194,22 @@
       }
 
       resizeMap();
-      window.addEventListener("resize", resizeMap, { passive: true });
+      if (resizeHandler) {
+        window.removeEventListener("resize", resizeHandler);
+      }
+      resizeHandler = resizeMap;
+      window.addEventListener("resize", resizeHandler, { passive: true });
     }
 
     window.addEventListener("message", (event) => {
       if (!event.data || event.data.type !== "streamlit:render") return;
       const args = event.data.args || {};
+      if (typeof args.html !== "string" || args.html.length === 0) return;
+      if (args.html === lastHtml) return;
+      lastHtml = args.html;
       const mount = document.getElementById("mount");
-      mount.innerHTML = args.html || "";
-      attachMapHandlers(args.height || 690);
+      mount.innerHTML = args.html;
+      attachMapHandlers(args.minHeight || 690);
     });
 
     Streamlit.setComponentReady();
