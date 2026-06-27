@@ -5,6 +5,7 @@ import html
 import json
 import math
 import tempfile
+import unicodedata
 import urllib.parse
 import urllib.request
 from datetime import datetime
@@ -252,10 +253,10 @@ def main() -> None:
     sync_query_params(lang, region, current_mode, selected_place["id"])
     selected_weather = weather.get(selected_place["id"], {})
 
-    st.markdown(f"<h1>{html.escape(ui['title'])}</h1>", unsafe_allow_html=True)
+    st.markdown(f"<h1 class=\"app-title\">{html.escape(ui['title'])}</h1>", unsafe_allow_html=True)
     st.caption(ui["subtitle"])
 
-    left, right = st.columns([1.45, 1], gap="large")
+    left, right = st.columns([2.2, 1], gap="large")
     with left:
         map_event = interactive_map_component(
             html=render_map(region, current_mode, lang, weather),
@@ -330,7 +331,17 @@ def inject_css() -> None:
             linear-gradient(135deg, #efe5cf, #d9c7a6 42%, #b88969);
           background-size: 42px 24px, 42px 24px, auto;
         }
-        h1 { color: #3e2417; letter-spacing: 0; font-size: clamp(1.55rem, 3vw, 2.25rem); }
+        .block-container {
+          max-width: 1480px;
+          padding-left: clamp(1rem, 3vw, 3.2rem);
+          padding-right: clamp(1rem, 3vw, 3.2rem);
+        }
+        h1 { color: #3e2417; letter-spacing: 0; }
+        h1.app-title {
+          font-size: clamp(1.55rem, 2.65vw, 2.15rem) !important;
+          line-height: 1.18 !important;
+          max-width: 980px;
+        }
         h1, h2, h3,
         [data-testid="stMarkdownContainer"],
         [data-testid="stMarkdownContainer"] p,
@@ -339,6 +350,14 @@ def inject_css() -> None:
         [data-testid="stMetricValue"],
         [data-testid="stWidgetLabel"] {
           color: #2f241c !important;
+        }
+        [data-testid="stMetricValue"] {
+          font-size: clamp(1.2rem, 2.2vw, 1.75rem) !important;
+          overflow: visible !important;
+        }
+        [data-testid="stMetricValue"] > div {
+          overflow: visible !important;
+          text-overflow: clip !important;
         }
         [data-testid="stSidebar"] { background: #f2ead8; }
         [data-testid="stSidebar"] * {
@@ -358,6 +377,16 @@ def inject_css() -> None:
         }
         .metric-card .name { font-size: 1.35rem; font-weight: 800; color: #3b271c; }
         .metric-card .sub { color: #6f5948; margin-bottom: 8px; }
+        @media (max-width: 760px) {
+          .block-container {
+            padding-left: .6rem;
+            padding-right: .6rem;
+          }
+          h1.app-title {
+            font-size: 1.55rem !important;
+            line-height: 1.22 !important;
+          }
+        }
         </style>
         """,
         unsafe_allow_html=True,
@@ -467,40 +496,49 @@ def render_map(region: str, mode: str, lang: str, weather: dict) -> str:
             path = f'<a class="map-link" href="{href}">{path}</a>'
         paths.append(path)
 
-    labels = []
-    for place in shown_places:
-        x, y = project(place["lon"], place["lat"])
-        value = marker_value(place, weather.get(place["id"], {}), mode, lang)
-        label = place_display_name(place, lang)
-        is_weather_mode = mode == "weather"
-        width = max(70 if is_weather_mode else 64, min(132, 9 * max(len(label), len(value)) + 22))
-        height = 46 if is_weather_mode else 40
-        label_y = y - 17 if is_weather_mode else y - 16
-        value_y = y + 5 if is_weather_mode else y - 2
-        value_size = 22 if is_weather_mode else 13
-        href = html.escape(map_href(lang, region, mode, place["id"]))
-        labels.append(
-            f"""
-            <a class="map-link marker-link" href="{href}">
-            <g>
-              <circle cx="{x:.1f}" cy="{y:.1f}" r="4.5" fill="#5a5748" opacity=".75" />
-              <rect x="{x + 7:.1f}" y="{y - 34:.1f}" width="{width}" height="{height}" rx="7" fill="#fffdf4" opacity=".95" />
-              <text x="{x + 12:.1f}" y="{label_y:.1f}" font-size="13" font-weight="700" fill="#2f2924">{html.escape(label)}</text>
-              <text x="{x + 12:.1f}" y="{value_y:.1f}" font-size="{value_size}" font-weight="800" fill="#0f7585">{html.escape(value)}</text>
-            </g>
-            </a>
-            """
-        )
-
     region_labels = []
+    blocked_boxes = []
     if region == "all":
         for item in REGIONS:
             if item["id"] == "all":
                 continue
             center = bounds_center(bounds_for_features([f for f in features if f["historical_region"] == item["id"]]))
             x, y = project(center[0], center[1])
+            label = region_display_name(item["id"], lang)
+            font_size = map_region_font_size(label)
+            label_width = map_text_units(label) * font_size * 0.55
+            blocked_boxes.append((x - label_width / 2, y - font_size, x + label_width / 2, y + 5))
             href = html.escape(map_href(lang, item["id"], mode))
-            region_labels.append(f'<a class="map-link" href="{href}"><text x="{x:.1f}" y="{y:.1f}" text-anchor="middle" font-size="24" font-weight="900" fill="#5d4a39" stroke="#fff4df" stroke-width="3" paint-order="stroke">{html.escape(region_display_name(item["id"], lang))}</text></a>')
+            region_labels.append(f'<a class="map-link" href="{href}"><text class="region-label" x="{x:.1f}" y="{y:.1f}" text-anchor="middle" font-size="{font_size}" font-weight="900" fill="#5d4a39" stroke="#fff4df" stroke-width="2.5" paint-order="stroke">{html.escape(label)}</text></a>')
+
+    labels = []
+    placed_boxes = list(blocked_boxes)
+    projected_places = [(place, *project(place["lon"], place["lat"])) for place in shown_places]
+    for place, x, y in sorted(projected_places, key=lambda item: (item[2], item[1])):
+        value = marker_value(place, weather.get(place["id"], {}), mode, lang)
+        label = place_display_name(place, lang)
+        is_weather_mode = mode == "weather"
+        width = map_place_label_width(label, value, is_weather_mode)
+        height = 46 if is_weather_mode else 40
+        label_size = 12 if map_text_units(label) > 9 else 13
+        value_size = 22 if is_weather_mode else 13
+        label_x, label_y, box = choose_map_label_box(x, y, width, height, placed_boxes)
+        placed_boxes.append(box)
+        text_label_y = label_y + 15
+        text_value_y = label_y + (37 if is_weather_mode else 31)
+        href = html.escape(map_href(lang, region, mode, place["id"]))
+        labels.append(
+            f"""
+            <a class="map-link marker-link" href="{href}">
+            <g>
+              <circle cx="{x:.1f}" cy="{y:.1f}" r="4.5" fill="#5a5748" opacity=".75" />
+              <rect class="place-label-bg" x="{label_x:.1f}" y="{label_y:.1f}" width="{width:.1f}" height="{height}" rx="7" fill="#fffdf4" opacity=".96" />
+              <text x="{label_x + 8:.1f}" y="{text_label_y:.1f}" font-size="{label_size}" font-weight="700" fill="#2f2924">{html.escape(label)}</text>
+              <text x="{label_x + 8:.1f}" y="{text_value_y:.1f}" font-size="{value_size}" font-weight="800" fill="#0f7585">{html.escape(value)}</text>
+            </g>
+            </a>
+            """
+        )
 
     reset_label = {"ja": "初期", "zh": "重置", "en": "Reset", "nl": "Begin"}.get(lang, "Reset")
     title = "けふの台湾" if lang == "ja" else region_display_name(region, lang)
@@ -553,8 +591,9 @@ def render_map(region: str, mode: str, lang: str, weather: dict) -> str:
         }}
         .map-controls button:hover {{ background:#f2ead8; }}
         .map-link, .marker-link {{ cursor:pointer; text-decoration:none; }}
+        .region-label {{ opacity:.82; }}
         .map-link:hover .region-shape {{ stroke:#473420; stroke-width:2; }}
-        .marker-link:hover rect {{ stroke:#473420; stroke-width:1.5; }}
+        .marker-link:hover .place-label-bg {{ stroke:#473420; stroke-width:1.5; }}
         #weather-map-svg.dragging {{ cursor:grabbing; }}
       </style>
     </div>
@@ -566,6 +605,68 @@ def map_href(lang: str, region: str, mode: str, place_id: str = "") -> str:
     if place_id:
         params["place"] = place_id
     return "?" + urllib.parse.urlencode(params)
+
+
+def map_text_units(value: str) -> float:
+    units = 0.0
+    for char in str(value):
+        units += 2.0 if unicodedata.east_asian_width(char) in ("F", "W", "A") else 1.0
+    return units
+
+
+def map_region_font_size(label: str) -> int:
+    units = map_text_units(label)
+    if units >= 15:
+        return 15
+    if units >= 11:
+        return 17
+    return 20
+
+
+def map_place_label_width(label: str, value: str, is_weather_mode: bool) -> float:
+    label_width = map_text_units(label) * 6.5 + 18
+    value_width = map_text_units(value) * (11 if is_weather_mode else 6.5) + 18
+    minimum = 58 if is_weather_mode else 64
+    return max(minimum, min(150, max(label_width, value_width)))
+
+
+def choose_map_label_box(x: float, y: float, width: float, height: float, placed_boxes: list[tuple[float, float, float, float]]) -> tuple[float, float, tuple[float, float, float, float]]:
+    gap = 9
+    candidates = [
+        (x + gap, y - height / 2),
+        (x - width - gap, y - height / 2),
+        (x + gap, y - height - gap),
+        (x - width - gap, y - height - gap),
+        (x + gap, y + gap),
+        (x - width - gap, y + gap),
+        (x - width / 2, y - height - 12),
+        (x - width / 2, y + 12),
+        (x + 18, y - height - 24),
+        (x - width - 18, y + 18),
+    ]
+    best = None
+    for index, (left, top) in enumerate(candidates):
+        left = clamp(left, 8, 900 - width - 8)
+        top = clamp(top, 8, 620 - height - 8)
+        box = (left, top, left + width, top + height)
+        overlap_penalty = sum(1 for existing in placed_boxes if boxes_overlap(box, existing, 5)) * 1000
+        distance_penalty = math.hypot((left + width / 2) - x, (top + height / 2) - y)
+        score = overlap_penalty + distance_penalty + index * 3
+        if best is None or score < best[0]:
+            best = (score, left, top, box)
+    if best is None:
+        left = clamp(x + gap, 8, 900 - width - 8)
+        top = clamp(y - height / 2, 8, 620 - height - 8)
+        return left, top, (left, top, left + width, top + height)
+    return best[1], best[2], best[3]
+
+
+def boxes_overlap(a: tuple[float, float, float, float], b: tuple[float, float, float, float], gap: float = 0) -> bool:
+    return not (a[2] + gap < b[0] or b[2] + gap < a[0] or a[3] + gap < b[1] or b[3] + gap < a[1])
+
+
+def clamp(value: float, minimum: float, maximum: float) -> float:
+    return max(minimum, min(maximum, value))
 
 
 def feature_path(feature: dict, project) -> str:

@@ -55,6 +55,15 @@
       let pointer = null;
       let suppressClick = false;
 
+      function resizeMap() {
+        const width = root.clientWidth || 900;
+        const svgHeight = Math.round(Math.max(260, Math.min(620, width * base.h / base.w)));
+        svg.style.height = `${svgHeight}px`;
+        window.setTimeout(() => {
+          Streamlit.setFrameHeight(root.getBoundingClientRect().height || height || 690);
+        }, 0);
+      }
+
       function normalize() {
         box.w = Math.max(base.w * 0.22, Math.min(base.w * 1.35, box.w));
         box.h = Math.max(base.h * 0.22, Math.min(base.h * 1.35, box.h));
@@ -181,7 +190,8 @@
         });
       }
 
-      Streamlit.setFrameHeight(height || document.documentElement.scrollHeight || 690);
+      resizeMap();
+      window.addEventListener("resize", resizeMap, { passive: true });
     }
 
     window.addEventListener("message", (event) => {
