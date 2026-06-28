@@ -83,6 +83,8 @@ PLACES = [
     {"id": "rato", "historical": "羅東", "reading": "らとう", "current": "羅東", "region": "台北州", "lat": 24.6769, "lon": 121.7707, "main": False},
     {"id": "suo", "historical": "蘇澳", "reading": "すおう", "current": "蘇澳", "region": "台北州", "lat": 24.5967, "lon": 121.8524, "main": False},
     {"id": "nanao", "historical": "南澳", "reading": "なんおう", "current": "南澳", "region": "台北州", "lat": 24.4667, "lon": 121.8000, "main": False},
+    {"id": "taiheizan", "historical": "太平山", "reading": "たいへいざん", "current": "太平山", "region": "台北州", "lat": 24.4977, "lon": 121.5350, "elevation": 2000, "main": False},
+    {"id": "urai", "historical": "烏来", "reading": "うらい", "current": "烏來", "region": "台北州", "lat": 24.8649, "lon": 121.5520, "main": False},
     {"id": "shinchiku", "historical": "新竹", "reading": "しんちく", "current": "新竹", "region": "新竹州", "lat": 24.8138, "lon": 120.9675, "main": True},
     {"id": "toen", "historical": "桃園", "reading": "とうえん", "current": "桃園", "region": "新竹州", "lat": 24.9937, "lon": 121.3009, "main": True},
     {"id": "chureki", "historical": "中壢", "reading": "ちゅうれき", "current": "中壢", "region": "新竹州", "lat": 24.9536, "lon": 121.2257, "main": False},
@@ -95,6 +97,7 @@ PLACES = [
     {"id": "taichu", "historical": "台中", "reading": "たいちゅう", "current": "台中", "region": "台中州", "lat": 24.1477, "lon": 120.6736, "main": True},
     {"id": "shoka", "historical": "彰化", "reading": "しょうか", "current": "彰化", "region": "台中州", "lat": 24.0809, "lon": 120.5389, "main": True},
     {"id": "nanto", "historical": "南投", "reading": "なんとう", "current": "南投", "region": "台中州", "lat": 23.9162, "lon": 120.6853, "main": True},
+    {"id": "nichigetsutan", "historical": "日月潭", "reading": "にちげつたん", "current": "日月潭", "region": "台中州", "lat": 23.8667, "lon": 120.9167, "elevation": 748, "main": False},
     {"id": "hori", "historical": "埔里", "reading": "ほり", "current": "埔里", "region": "台中州", "lat": 23.9640, "lon": 120.9719, "main": False},
     {"id": "niitakayama", "historical": "新高山", "reading": "にいたかやま", "current": "玉山", "region": "台中州", "lat": 23.4700, "lon": 120.9573, "elevation": 3952, "main": False},
     {"id": "tsugitakayama", "historical": "次高山", "reading": "つぎたかやま", "current": "雪山", "region": "台中州", "lat": 24.3833, "lon": 121.2333, "elevation": 3886, "main": False},
@@ -102,6 +105,7 @@ PLACES = [
     {"id": "toroku", "historical": "斗六", "reading": "とろく", "current": "斗六", "region": "台南州", "lat": 23.7078, "lon": 120.5433, "main": False},
     {"id": "tainan", "historical": "台南", "reading": "たいなん", "current": "台南", "region": "台南州", "lat": 22.9999, "lon": 120.2269, "main": True},
     {"id": "shinei", "historical": "新営", "reading": "しんえい", "current": "新營", "region": "台南州", "lat": 23.3075, "lon": 120.3128, "main": False},
+    {"id": "arisan", "historical": "阿里山", "reading": "ありさん", "current": "阿里山", "region": "台南州", "lat": 23.5113, "lon": 120.8037, "elevation": 2216, "main": False},
     {"id": "takao", "historical": "高雄", "reading": "たかお", "current": "高雄", "region": "高雄州", "lat": 22.6273, "lon": 120.3014, "main": True},
     {"id": "okayama", "historical": "岡山", "reading": "おかやま", "current": "岡山", "region": "高雄州", "lat": 22.7935, "lon": 120.2958, "main": False},
     {"id": "hozan", "historical": "鳳山", "reading": "ほうざん", "current": "鳳山", "region": "高雄州", "lat": 22.6266, "lon": 120.3613, "main": False},
@@ -128,13 +132,13 @@ PLACES = [
     {"id": "shichibi", "historical": "七美", "reading": "しちび", "current": "七美", "region": "澎湖庁", "lat": 23.2085, "lon": 119.4295, "main": True},
 ]
 
-OVERVIEW_PLACE_IDS = {"taihoku", "shinchiku", "taichu", "niitakayama", "tainan", "takao", "karenko", "taito", "mako"}
+OVERVIEW_PLACE_IDS = {"taihoku", "taiheizan", "urai", "shinchiku", "taichu", "nichigetsutan", "niitakayama", "tainan", "arisan", "takao", "karenko", "taito", "mako"}
 
 ROMAJI_PLACE_NAMES = {
-    "taihoku": "Taihoku", "kiirun": "Kiirun", "tansui": "Tansui", "giran": "Giran", "rato": "Rato", "suo": "Suo", "nanao": "Nanao",
+    "taihoku": "Taihoku", "kiirun": "Kiirun", "tansui": "Tansui", "giran": "Giran", "rato": "Rato", "suo": "Suo", "nanao": "Nanao", "taiheizan": "Taiheizan", "urai": "Urai",
     "shinchiku": "Shinchiku", "toen": "Toen", "chureki": "Chureki", "taikei": "Taikei", "chikuto": "Chikuto", "chikunan": "Chikunan", "tofun": "Tofun", "byoritsu": "Byoritsu", "taiko": "Taiko",
-    "taichu": "Taichu", "shoka": "Shoka", "nanto": "Nanto", "hori": "Hori", "niitakayama": "Mt. Niitaka", "tsugitakayama": "Tsugitakayama",
-    "kagi": "Kagi", "toroku": "Toroku", "tainan": "Tainan", "shinei": "Shinei",
+    "taichu": "Taichu", "shoka": "Shoka", "nanto": "Nanto", "nichigetsutan": "Nichigetsutan", "hori": "Hori", "niitakayama": "Mt. Niitaka", "tsugitakayama": "Tsugitakayama",
+    "kagi": "Kagi", "toroku": "Toroku", "tainan": "Tainan", "shinei": "Shinei", "arisan": "Arisan",
     "takao": "Takao", "okayama": "Okayama", "hozan": "Hozan", "heito": "Heito", "choshu": "Choshu", "toko": "Toko", "riukiu": "Riukyu", "koshun": "Koshun", "kizan": "Kizan",
     "karenko": "Karenko", "taroko": "Taroko", "horin": "Horin", "mizuho": "Mizuho", "tamazato": "Tamazato", "tomisato": "Tomisato",
     "taito": "Taito", "kanzan": "Kanzan", "shinko": "Shinko", "kashoto": "Kashoto", "kotosho": "Kotosho",
@@ -1288,6 +1292,7 @@ def to_display_chinese(value: str) -> str:
         str(value)
         .replace("台湾", "臺灣")
         .replace("台", "臺")
+        .replace("来", "來")
         .replace("庁", "廳")
         .replace("営", "營")
         .replace("恒", "恆")
