@@ -132,7 +132,7 @@ PLACES = [
     {"id": "shichibi", "historical": "七美", "reading": "しちび", "current": "七美", "region": "澎湖庁", "lat": 23.2085, "lon": 119.4295, "main": True},
 ]
 
-OVERVIEW_PLACE_IDS = {"taihoku", "taiheizan", "urai", "shinchiku", "taichu", "nichigetsutan", "niitakayama", "tainan", "arisan", "takao", "karenko", "taito", "mako"}
+OVERVIEW_PLACE_IDS = {"taihoku", "shinchiku", "taichu", "niitakayama", "tainan", "takao", "karenko", "taito", "mako"}
 
 ROMAJI_PLACE_NAMES = {
     "taihoku": "Taihoku", "kiirun": "Kiirun", "tansui": "Tansui", "giran": "Giran", "rato": "Rato", "suo": "Suo", "nanao": "Nanao", "taiheizan": "Taiheizan", "urai": "Urai",
@@ -840,26 +840,32 @@ def map_place_label_width(label: str, value: str, is_weather_mode: bool) -> floa
 
 def choose_map_label_box(x: float, y: float, width: float, height: float, placed_boxes: list[tuple[float, float, float, float]]) -> tuple[float, float, tuple[float, float, float, float]]:
     gap = 9
-    candidates = [
-        (x + gap, y - height / 2),
-        (x - width - gap, y - height / 2),
-        (x + gap, y - height - gap),
-        (x - width - gap, y - height - gap),
-        (x + gap, y + gap),
-        (x - width - gap, y + gap),
-        (x - width / 2, y - height - 12),
-        (x - width / 2, y + 12),
+    candidates = []
+    for extra in (0, 18, 36, 54, 72, 96):
+        distance = gap + extra
+        candidates.extend([
+            (x + distance, y - height / 2),
+            (x - width - distance, y - height / 2),
+            (x - width / 2, y - height - distance),
+            (x - width / 2, y + distance),
+            (x + distance, y - height - distance),
+            (x - width - distance, y - height - distance),
+            (x + distance, y + distance),
+            (x - width - distance, y + distance),
+        ])
+    candidates.extend([
         (x + 18, y - height - 24),
         (x - width - 18, y + 18),
-    ]
+    ])
+    candidates = list(dict.fromkeys(candidates))
     best = None
     for index, (left, top) in enumerate(candidates):
         left = clamp(left, 8, 900 - width - 8)
         top = clamp(top, 8, 620 - height - 8)
         box = (left, top, left + width, top + height)
-        overlap_penalty = sum(1 for existing in placed_boxes if boxes_overlap(box, existing, 5)) * 1000
+        overlap_penalty = sum(1 for existing in placed_boxes if boxes_overlap(box, existing, 8)) * 100000
         distance_penalty = math.hypot((left + width / 2) - x, (top + height / 2) - y)
-        score = overlap_penalty + distance_penalty + index * 3
+        score = overlap_penalty + distance_penalty + index * 0.25
         if best is None or score < best[0]:
             best = (score, left, top, box)
     if best is None:
