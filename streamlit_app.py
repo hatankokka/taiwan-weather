@@ -167,6 +167,13 @@ SPEECH_VOICES = {
     "nl": [("nl-NL-MaartenNeural", "Maarten / man"), ("nl-NL-ColetteNeural", "Colette / vrouw"), ("nl-NL-FennaNeural", "Fenna / vrouw")],
 }
 
+SPEECH_RATES = {
+    "ja": "+0%",
+    "zh": "+12%",
+    "en": "+18%",
+    "nl": "+18%",
+}
+
 WEATHER_CODE_JA = {
     0: "快晴", 1: "晴れ", 2: "薄曇り", 3: "曇り", 45: "霧", 48: "霧氷霧",
     51: "霧雨", 53: "霧雨", 55: "強い霧雨", 56: "着氷性霧雨", 57: "強い着氷性霧雨",
@@ -303,7 +310,7 @@ def main() -> None:
     c1, c2 = st.columns([1, 1])
     if c1.button(ui["speak"], width="stretch"):
         spoken = speech_text if edited_bulletin.strip() == bulletin_text.strip() else edited_bulletin
-        mp3 = create_tts_mp3(spoken, voice)
+        mp3 = create_tts_mp3(spoken, voice, SPEECH_RATES.get(lang, "+0%"))
         st.audio(mp3, format="audio/mp3")
         c2.download_button(ui["download"], mp3, file_name=f"weather-{lang}-{safe_filename(place_display_name(selected_place, lang))}.mp3", mime="audio/mpeg", width="stretch")
 
@@ -722,6 +729,13 @@ def render_map(region: str, mode: str, lang: str, weather: dict) -> str:
         )
 
     reset_label = {"ja": "初期", "zh": "重置", "en": "Reset", "nl": "Begin"}.get(lang, "Reset")
+    all_label = {"ja": "全域", "zh": "全域", "en": "All", "nl": "Alles"}.get(lang, "All")
+    all_aria = {"ja": "全域へ戻る", "zh": "返回全域", "en": "Return to all", "nl": "Terug naar alles"}.get(lang, "Return to all")
+    return_place_id = default_place_id_for_region(region)
+    all_button = ""
+    if region != "all":
+        all_href = html.escape(map_href(lang, "all", mode, return_place_id if return_place_id in OVERVIEW_PLACE_IDS else ""))
+        all_button = f'<a id="map-return-all" class="map-link map-return" href="{all_href}" aria-label="{html.escape(all_aria)}" title="{html.escape(all_aria)}">{html.escape(all_label)}</a>'
     title = "けふの台湾" if lang == "ja" else region_display_name(region, lang)
 
     return f"""
@@ -731,6 +745,7 @@ def render_map(region: str, mode: str, lang: str, weather: dict) -> str:
         <span style="font-weight:500;color:#7f6b58;">g0v/twgeojson CC0</span>
       </div>
       <div class="map-controls" aria-label="map controls">
+        {all_button}
         <button id="zoom-in" type="button" aria-label="zoom in">+</button>
         <button id="zoom-out" type="button" aria-label="zoom out">-</button>
         <button id="zoom-reset" type="button" aria-label="reset">{html.escape(reset_label)}</button>
@@ -760,7 +775,8 @@ def render_map(region: str, mode: str, lang: str, weather: dict) -> str:
           box-shadow:0 6px 18px rgba(45,28,18,.14);
           z-index:3;
         }}
-        .map-controls button {{
+        .map-controls button,
+        .map-controls .map-return {{
           min-width:32px;
           height:30px;
           border:1px solid #d7cbb7;
@@ -769,8 +785,15 @@ def render_map(region: str, mode: str, lang: str, weather: dict) -> str:
           color:#2f2924;
           font:700 14px system-ui, -apple-system, Segoe UI, sans-serif;
           cursor:pointer;
+          display:inline-flex;
+          align-items:center;
+          justify-content:center;
+          padding:0 9px;
+          text-decoration:none;
+          box-sizing:border-box;
         }}
-        .map-controls button:hover {{ background:#f2ead8; }}
+        .map-controls button:hover,
+        .map-controls .map-return:hover {{ background:#f2ead8; }}
         .map-link, .marker-link {{ cursor:pointer; text-decoration:none; }}
         .region-label {{ opacity:.82; }}
         .map-link:hover .region-shape {{ stroke:#473420; stroke-width:2; }}
@@ -1022,14 +1045,14 @@ def dutch_bulletin_line(place: dict, weather: dict, speech: bool) -> str:
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
-def create_tts_mp3(text: str, voice: str) -> bytes:
+def create_tts_mp3(text: str, voice: str, rate: str) -> bytes:
     try:
         import edge_tts
     except ImportError as exc:
         raise RuntimeError("edge-tts がインストールされていません。requirements.txt を入れてください。") from exc
 
     async def run() -> bytes:
-        communicate = edge_tts.Communicate(text, voice)
+        communicate = edge_tts.Communicate(text, voice, rate=rate)
         with tempfile.TemporaryDirectory(prefix="taiwan-weather-tts-") as temp_dir:
             path = Path(temp_dir) / "speech.mp3"
             await communicate.save(str(path))
